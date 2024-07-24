@@ -1,0 +1,132 @@
+import tkinter as tk
+from tkinter import scrolledtext
+import mysql.connector
+from openai import OpenAI
+
+# Initialize OpenAI client
+client = OpenAI(api_key='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')
+
+# Initialize MySQL database connection
+conn = mysql.connector.connect(
+    host="localhost",
+    user="new_user",
+    password="openai",
+    database="openai_db"
+)
+c = conn.cursor()
+
+# Function to get company name from database
+def get_company_name():
+    c.execute("SELECT company_name FROM company_info WHERE id = 1")  # Assuming company info is in the first row
+    result = c.fetchone()
+    return result[0] if result else "Company name not found"
+
+# Function to interact with OpenAI API for chat completion
+def get_openai_response(prompt):
+    try:
+        # Check if the prompt matches any entry in the extra_data table
+        c.execute("SELECT response FROM extra_data WHERE data = %s", (prompt,))
+        result = c.fetchone()
+        if result:
+            return result[0]
+
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=150)
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return str(e)
+
+# Function to train the OpenAI model with custom data and store in MySQL database
+def train_and_store(prompt, response):
+    try:
+        sql = "INSERT INTO training_data (prompt, response) VALUES (%s, %s)"
+        val = (prompt, response)
+        c.execute(sql, val)
+        conn.commit()
+        return f"Trained successfully: {prompt} -> {response}"
+    except Exception as e:
+        return f"Error training: {str(e)}"
+
+# Function to add extra data to MySQL database
+def add_extra_data(data):
+    try:
+        response = "Custom response for " + data  # Placeholder response, adjust as needed
+        sql = "INSERT INTO extra_data (data, response) VALUES (%s, %s)"
+        val = (data, response)
+        c.execute(sql, val)
+        conn.commit()
+        return f"Extra data added successfully: {data}"
+    except Exception as e:
+        return f"Error adding extra data: {str(e)}"
+
+# Function to update output box with response
+def update_output_box(output_box, text):
+    output_box.config(state=tk.NORMAL)
+    output_box.insert(tk.END, text + "\n")
+    output_box.config(state=tk.DISABLED)
+    output_box.see(tk.END)
+
+# Function to clear output box
+def clear_output_box(output_box):
+    output_box.config(state=tk.NORMAL)
+    output_box.delete(1.0, tk.END)
+    output_box.config(state=tk.DISABLED)
+
+# Function to handle new chat button click
+def start_new_chat(output_box):
+    clear_output_box(output_box)
+    update_output_box(output_box, "New chat started. Say something to begin!")
+    # You can perform additional actions here to reset the chat or perform initialization
+
+# Function to send user input and get OpenAI response
+def send_input(output_box, input_entry):
+    user_input = input_entry.get().strip()
+    if user_input.lower() == 'exit':
+        root.destroy()
+        return
+    response = get_openai_response(user_input)
+    update_output_box(output_box, f"Input: {user_input}\nResponse: {response}\n")
+    input_entry.delete(0, tk.END)
+
+# Function to handle training input and update output box
+def train_model_and_update(output_box, prompt_entry, response_entry):
+    prompt = prompt_entry.get().strip()
+    response = response_entry.get("1.0", tk.END).strip()
+    if prompt and response:
+        result = train_and_store(prompt, response)
+        update_output_box(output_box, f"Training result: {result}")
+        prompt_entry.delete(0, tk.END)
+        response_entry.delete("1.0", tk.END)
+
+# Function to handle adding extra data and update output box
+def add_extra_data_and_update(output_box, data_entry):
+    data = data_entry.get().strip()
+    if data:
+        result = add_extra_data(data)
+        update_output_box(output_box, f"Extra data result: {result}")
+        data_entry.delete(0, tk.END)
+
+# Function to handle window closing event
+def on_closing():
+    conn.close()  # Close database connection
+    root.destroy()
+
+# Create the main window
+root = tk.Tk()
+root.title("OpenAI Chat and Training with MySQL")
+root.geometry("800x600")  # Set the initial size of the window
+
+# Create a frame for sidebar
+sidebar_frame = tk.Frame(root, width=200, bg="lightgrey")
+sidebar_frame.pack(fill=tk.Y, side=tk.LEFT)
+
+# Add buttons or entries for new chat in the sidebar
+new_chat_button = tk.Button(sidebar_frame, text="New Chat", command=lambda: start_new_chat(output_box))
+new_chat_button.pack(pady=10)
+
+# Add
