@@ -1,0 +1,114 @@
+import requests
+import subprocess
+import tempfile
+from gtts import gTTS
+import os
+from openai import OpenAI
+
+# Initialize OpenAI client
+client = OpenAI(api_key='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')
+
+# Your Telegram bot token
+bot_token = 'your bot token'
+api_url = f'https://api.telegram.org/bot{bot_token}/'
+
+def text_to_speech(text, output_file):
+    # Using gTTS library for text-to-speech conversion
+    tts = gTTS(text=text, lang='en')
+    tts.save(output_file)
+
+def create_video(text, animated_visuals, output_video):
+    # Generate narration audio file
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_audio:
+        tmp_audio_name = tmp_audio.name
+    text_to_speech(text, tmp_audio_name)
+
+    # Check if the animated visuals file exists
+    if not os.path.isfile(animated_visuals):
+        raise FileNotFoundError(f"Animated visuals file '{animated_visuals}' not found or not a valid video file.")
+
+    # Example video creation using ffmpeg with animated visuals
+    ffmpeg_command = [
+        'ffmpeg', '-y', '-i', animated_visuals, '-i', tmp_audio_name,
+        '-c:v', 'copy', '-c:a', 'aac', '-strict', 'experimental',
+        '-map', '0:v:0', '-map', '1:a:0',
+        output_video
+    ]
+
+    print("Running ffmpeg command:", ' '.join(ffmpeg_command))
+    result = subprocess.run(ffmpeg_command, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        print("ffmpeg error output:", result.stderr)
+        raise RuntimeError(f"ffmpeg command failed with return code {result.returncode}")
+
+    # Clean up temporary audio file
+    os.remove(tmp_audio_name)
+
+def chat_completion(user_input):
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": user_input}],
+        temperature=0.7
+    )
+    return response.choices[0].message.content
+
+def send_message(chat_id, text):
+    url = api_url + 'sendMessage'
+    payload = {'chat_id': chat_id, 'text': text}
+    requests.post(url, json=payload)
+
+def send_video(chat_id, video_path):
+    url = api_url + 'sendVideo'
+    with open(video_path, 'rb') as video:
+        files = {'video': video}
+        data = {'chat_id': chat_id}
+        requests.post(url, data=data, files=files)
+
+def handle_start_command(chat_id):
+    text = "Hello! I'm your Telegram bot. Please enter your topic."
+    send_message(chat_id, text)
+
+def handle_message(chat_id, text):
+    completion = chat_completion(text)
+    print("Bot's response:", completion)
+
+    # Path to your pre-rendered animated visuals
+    animated_visuals = 'animated_visuals.mp4'
+
+    # Generate video format response with animated visuals
+    output_video = 'response_with_animation.mp4'
+    create_video(completion, animated_visuals, output_video)
+
+    print(f"Video response with animated visuals created: {output_video}")
+    
+    # Send video back to user
+    send_video(chat_id, output_video)
+
+def handle_update(update):
+    message = update.get('message')
+    if not message:
+        return
+
+    chat_id = message['chat']['id']
+    text = message.get('text')
+
+    if text == '/start':
+        handle_start_command(chat_id)
+    else:
+        handle_message(chat_id, text)
+
+def main():
+    # Use long polling to get updates
+    offset = None
+    while True:
+        url = api_url + 'getUpdates'
+        params = {'offset': offset, 'timeout': 100}
+        response = requests.get(url, params=params).json()
+
+        for update in response['result']:
+            handle_update(update)
+            offset = update['update_id'] + 1
+
+if __name__ == '__main__':
+    main()
