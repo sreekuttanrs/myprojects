@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Upload</title>
+</head>
+<body>
+    <h1>Upload Image</h1>
+    <form action="/" method="post" enctype="multipart/form-data">
+        <input type="file" name="file">
+        <input type="submit" value="Upload">
+    </form>
+    
+    {% if details %}
+        <h2>Extracted Details</h2>
+        <ul>
+            {% for key, value in details.items() %}
+                <li><strong>{{ key }}:</strong> {{ value if value else 'Not found' }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+    
+    {% if message %}
+        <p>{{ message }}</p>
+    {% endif %}
+</body>
+</html>
